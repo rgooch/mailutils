@@ -1,0 +1,122 @@
+.\" Copyright (C) 2003-2007  Richard Gooch
+.\"
+.\" This program is free software; you can redistribute it and/or modify
+.\" it under the terms of the GNU General Public License as published by
+.\" the Free Software Foundation; either version 2 of the License, or
+.\" (at your option) any later version.
+.\"
+.\" This program is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU General Public License
+.\" along with this program; if not, write to the Free Software
+.\" Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+.\"
+.\" Richard Gooch may be reached at  http://www.safe-mbox.com/~rgooch/
+.\"
+.\"	milter-size.8		Richard Gooch	7-JUL-2007
+.\"
+.TH MILTER-SIZE 8 "7 Jul 2007" "GoochUtils"
+
+.SH NAME
+milter-size \- sendmail milter to reject certain message sizes
+
+.SH SYNOPSIS
+.B milter-size
+.B -l low
+.B -h high
+.B -p port
+.B [ -r remhost ]
+.B [ -R remport ]
+
+.SH DESCRIPTION
+The \fImilter-size\fP programme is a sendmail milter (mail filter)
+which can be used to reject messages of certain sizes during the SMTP
+transaction. It is a little more flexibility than the sendmail
+message size limit. It provides a simple and quick way to block
+rampaging virus attacks (where a very large number of unwanted
+messages of nearly the same size flood your email system) but still
+allowing the administrator to limit the negative effects of the
+milter.
+
+The milter will fork a background process which should never exit
+(unless there is some internal failure).
+
+Rejected emails will result in a 55x code being returned by sendmail,
+with the following status string:
+.P
+"body length: %d rejected by administrator"
+.P
+where "%d" is the number of bytes in the message body.
+
+.SH OPTIONS
+.TP
+.B \-l low
+The lower limit on message body size. Messages above this limit are
+passed. The default is 0.
+.TP
+.B \-h high
+The higher limit on message body size. Messages below this limit are
+passed. The default is infinite.
+
+If \fIlow\fP is less than \fIhigh\fP then messages equal or larger
+than \fIlow\fP AND smaller or equal to \fIhigh\fP are passed, all others are
+rejected (thus allowing only messages within a specified size range).
+
+If \fIlow\fP is greater than \fIhigh\fP then messages larger than
+\fIlow\fP OR smaller than \fIhigh\fP are passed, all others are
+rejected (thus rejecting messages within a specified size range).
+.TP
+.B \-p port
+The port to listen on for connections from sendmail.
+.TP
+.B \-r remhost
+If specified, the size of each message is sent via a UDP packet to
+\fIremhost\fP. The packet will contain a single, network-endian
+(i.e. big endian) 32 bit unsigned integer which is the size in bytes
+of the message body. Note that the size is sent irrespective of
+whether \fImilter-size\fP rejects the message.
+.TP
+.B \-r remport
+UDP size messages are sent to \fIremport\fP. The default is 1024.
+
+.SH CAVEATS
+The message body usually includes carriage returns, as these are
+present in the SMTP transaction. This should be taken into account
+when setting message body size limits.
+
+.SH EXAMPLES
+The SoBig virus has message body sizes ranging from 99 KB to 105 KB.
+Blocking all messages over 99 KB is quite drastic, as there may be
+many legitimate emails which are quite large. Blocking only messages
+between 99 KB and 105 KB reduces the effect on legitimate email, but
+still blocks the virus. The following command implements this:
+
+milter-size -l 105000 -h 99000 -p local:/var/run/milter-size.sock
+
+If you want to block messages over 1 MB, do this:
+
+milter-size -h 1000000 -p local:/var/run/milter-size.sock
+
+If you just want to log the size of message bodies, do this:
+
+milter-size -r myhost.mydomain -p local:/var/run/milter-size.sock
+
+.SH SENDMAIL CONFIGURATION
+You should consult the sendmail documentation for information on how
+to configure a milter, but here is a suggestion for your M4
+configuration file:
+
+INPUT_MAIL_FILTER(`milter-size', `S=local:/var/run/milter-size.sock')
+
+.SH NOTE
+The sendmail configuration file will need to be updated so that this
+milter is used, and sendmail will need to be restarted.
+.SH AUTHOR
+Richard Gooch http://www.safe-mbox.com/~rgooch/
+
+.SH AVAILABILITY
+The \fBmilter-size\fP programme is available from:
+ftp://ftp.atnf.csiro.au/pub/people/rgooch/utilities/

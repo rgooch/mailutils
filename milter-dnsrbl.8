@@ -1,0 +1,256 @@
+.\" Copyright (C) 2003-2004  Richard Gooch
+.\"
+.\" This program is free software; you can redistribute it and/or modify
+.\" it under the terms of the GNU General Public License as published by
+.\" the Free Software Foundation; either version 2 of the License, or
+.\" (at your option) any later version.
+.\"
+.\" This program is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU General Public License
+.\" along with this program; if not, write to the Free Software
+.\" Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+.\"
+.\" Richard Gooch may be reached at  http://www.safe-mbox.com/~rgooch/
+.\"
+.\"	milter-dnsrbl.8		Richard Gooch	10-JUN-2004
+.\"
+.TH MILTER-DNSRBL 8 "10 Jun 2004" "GoochUtils"
+
+.SH NAME
+milter-dnsrbl \- sendmail milter to reject and/or stall messages
+relayed via blacklisted hosts
+
+.SH SYNOPSIS
+.B milter-dnsrbl
+.B -p port
+
+.SH DESCRIPTION
+The \fImilter-dnsrbl\fP programme is a sendmail milter (mail filter)
+which can be used to reject and/or stall messages which have been
+relayed via a host listed in a DNS RBL (Real-time Black List). This
+milter provides more flexibilty than the sendmail DNS RBL features
+(\fIdnsbl\fP and \fIenhdnsbl\fP), having the following features:
+
+.RS
+reject a message with a 44x (temporary) error
+
+reject a message with a 55x (permanent) error
+
+discard a message (silently)
+
+accept a message, but insert a tag (header line)
+
+stall the connection for a specified time
+
+check \fBReceived:\fP header lines for IP addresses of previous relay
+machines
+
+change behaviour depending on connecting MTA
+
+.RE
+The ability to reject a message with a temporary error and/or stall a
+message may be used to consume resources on the sending MTA. This will
+help to increase the costs to the spammer or the open relay being
+abused by the spammer.
+
+If a sender is authenticated, then all checks are skipped and the
+message is accepted (by this milter). This allows a legitimate user
+with an SMTP account to cohabit with spammers and dial-up users on the
+same IP address.
+
+The milter will fork a background process which should never exit
+(unless there is some internal failure).
+
+.SH OPTIONS
+.TP
+.B \-p port
+The \fIport\fP to listen on for connections from sendmail.
+
+.SH CONFIGURATION
+The configuration file \fB/etc/mail/milter-dnsrbl.conf\fP is used to
+configure the black-lists to query, and the behaviour to take when an
+IP address is listed. The modification timestamp is checked every time
+a new mail connection is established, and the file is rescanned if
+needed.
+
+It is a simple ASCII file. Comment lines must start with a leading '#'
+character. Comment lines and blank lines are ignored. There are two
+types of configuration entries, \fImatch actions\fP and
+\fIlists\fP.
+
+\fIactions\fP are taken when a \fImatch\fP is found. The syntax is:
+.TP
+.B MATCH addrgrp [ConnectMTA=host] action[,action]
+where \fIaddrgrp\fP is an IP address grouping and \fIaction\fP is the
+action to take. This must be on a single line. The following IP
+address groupings exist:
+.RS
+.TP
+.B CONNECTIP
+The IP address of the connecting MTA is used for database lookups.
+Only one configuration entry for this address grouping is allowed
+.TP
+.B RELAYIP
+The IP address of a relaying MTA in a \fBReceived:\fP line is used for
+database lookups. The optional \fIhost\fP specifies that the given
+\fIaction\fP is only taken if the connecting MTA is \fIhost\fP. This
+allows you to change the \fIaction\fP when spam is relayed through a
+legitimate host (as when happens when users have multiple email
+accounts which they forward)
+.PP
+The following actions are defined:
+.TP
+.B PERMFAIL
+Fail the mail transaction with a 55x (permanent) error code. This is
+an exclusive action.
+.TP
+.B TEMPFAIL
+Fail the mail transaction with a 44x (temporary) error code. This is
+an exclusive action.
+.TP
+.B TAG
+Allow the mail to pass, but add a header line (tag). This is an
+exclusive action.
+.TP
+.B DISCARD
+Accept and silently discard the message. This is an exclusive action.
+.TP
+.B STALL
+Stall the mail connection for a while, consuming resources on the
+connecting MTA. This may be used in conjunction with the other
+actions.
+.RE
+.PP
+.TP
+.B STALLTIME seconds
+Specifies the number of \fIseconds\fP to stall the MTA when a database
+match is found. The default is 5 seconds.
+.PP
+List declarations specify the DNS black-list databases to query for
+each IP address. These may span multiple lines, provided each token
+and its value are on the same line. The syntax is:
+.TP
+.B LIST database BLADDR bladdr [BLMASK blmask] [DULADDR duladdr [DULMASK dulmask]]  MESSAGE message text
+where \fIdatabase\fP is the DNS blacklist database to consult,
+\fIbladdr\fP is the IP address that should be contained in the DNS A
+record (typically 127.0.0.2 for many lists), \fIblmask\fP is an
+optional mask to apply to comparisons with \fIbladdr\fP, \fIduladdr\fP
+is an optional address that indicates the address is in a \fBdialup\fP
+database, \fIdulmask\fP is an optional mask to apply to comparisons
+with \fIduladdr\fP and \fImessage text\fP is the message text to
+return with the error code. The "$BADIP" substring will be replaced
+with the black-listed IP address.
+
+Note that the default mask values are 255.255.255.255 (i.e. match a
+single value only).
+
+.SH EXAMPLES
+milter-dnsrbl -p local:/var/run/milter-dnsrbl.sock
+
+The following is a sample configuration file:
+
+.nf
+MATCH   CONNECTIP       TEMPFAIL,STALL
+MATCH   RELAYIP         TEMPFAIL,STALL
+
+LIST	relays.ordb.org
+	BLADDR	127.0.0.2
+	MESSAGE	Open relay rejected; see http://ordb.org/lookup/?host=$BADIP
+
+LIST	bl.spamcop.net
+	BLADDR	127.0.0.2
+	MESSAGE	Spam blocked see: http://spamcop.net/bl.shtml?$BADIP
+.fi
+
+If you have access to the MAPS DUL (dial-up user list), it should be
+configured thus:
+
+.nf
+LIST	dialups.mail-abuse.org
+	BLADDR	127.0.0.2
+	DULADDR	127.0.0.2
+	MESSAGE	Spam blocked see: http://www.mail-abuse.org/cgi-bin/lookup?$BADIP
+.fi
+
+If you have access to the MAPS RBL+ (which combines the RBL, RSS, DUL,
+OPS and perhaps other databases), you need to ensure that an MTA
+listed only in the DUL will not match for the \fBRELAYIP\fP address
+group. Configure thus:
+
+.nf
+LIST	rbl-plus.mail-abuse.org
+	BLADDR	127.1.0.0
+	BLMASK	255.255.255.0
+	DULADDR	127.1.0.2
+	MESSAGE	Spam blocked see: http://www.mail-abuse.org/cgi-bin/lookup?$BADIP
+.fi
+
+If there is legitimate relay MTA that has reasonable anti-spam
+filtering, and you want to not bother the postmaster of that MTA if
+some spam leaks through, do this (the example MTA is vger.kernel.org):
+
+.nf
+MATCH	RELAYIP	ConnectMTA=vger.kernel.org	TAG
+.fi
+
+.SH DATABASE LOOKUPS
+The IP address lookups are performed by reversing the 4 decimal digits
+of the IP address, and prepending them to the \fIdatabase\fP field for
+each list, and performing a DNS lookup on the result. If no A record
+is found, the IP address is considered not listed, and thus not
+black-listed. If an A record is found, and the IP address matches the
+\fIbladdr\fP and \fIblmask\fP for that list, the IP address is
+considered listed, and is thus black-listed. If the IP address does
+not match the \fIbladdr\fP then it is considered a bad match, and a
+header line is added recording this, but the message is not blocked.
+
+The behaviour described above reduces the chances of legitimate email
+being blocked. Consider a DNS black-list which has been shut down
+(perhaps in response to a DDoS attack by spammers). If the entire
+domain is shut down, DNS lookups may be hijacked by the illegitimate
+insertion of DNS wildcards by the organisation controlling the parent
+domain (Verisign started this reprehensible practice in SEP-2003).
+This would in turn result in DNS lookups yielding an IP address (in
+the case of Verisign, their harvesting server).
+
+The automatic tagging of bad matches allows an email administrator to
+detect such events and also when a blacklist changes the values in the
+A records. Such changes are known to happen with the MAPS RBL+.
+
+An additional check is performed if the IP address is part of the
+\fBRELAYIP\fP address group (i.e. in a \fBReceived:\fP header line).
+In this case, the value in the DNS A record is first checked against
+\fIduladdr\fP (and \fIdulmask\fP), and if it matches, it is considered
+\fBnot listed\fP. This feature is required to safely use \fBdialup\fP
+lists, so that a legitimate dialup user (with a responsible ISP), who
+uses the approved MTA of their ISP is not incorrectly blocked.
+
+.SH FORMAT OF TAGS (HEADER LINES)
+If a good match is found (i.e. relaying MTA IP address is
+blacklisted), the following header line will be inserted:
+.nf\fB
+X-Milter-DNSRBL: GOOD addrgroup match arec (blacklisted) for ipaddr in list
+.fi\fP
+
+If a bad match is found, the following header line will be inserted:
+.nf\fB
+X-Milter-DNSRBL: BAD addrgroup match arec (hijacked/misconfigured) for ipaddr in list
+.fi\fP
+
+where \fIaddrgroup\fP is the address group, \fIarec\fP is the DNS A
+record in the database, \fIipaddr\fP is the IP address of the MTA and
+\fIlist\fP is the database.
+
+.SH NOTE
+The sendmail configuration file will need to be updated so that this
+milter is used, and sendmail will need to be restarted.
+.SH AUTHOR
+Richard Gooch http://www.safe-mbox.com/~rgooch/
+
+.SH AVAILABILITY
+The \fBmilter-dnsrbl\fP programme is available from:
+ftp://ftp.atnf.csiro.au/pub/people/rgooch/utilities/

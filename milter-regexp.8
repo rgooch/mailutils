@@ -1,0 +1,292 @@
+.\" Copyright (C) 2004  Richard Gooch
+.\"
+.\" This program is free software; you can redistribute it and/or modify
+.\" it under the terms of the GNU General Public License as published by
+.\" the Free Software Foundation; either version 2 of the License, or
+.\" (at your option) any later version.
+.\"
+.\" This program is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU General Public License
+.\" along with this program; if not, write to the Free Software
+.\" Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+.\"
+.\" Richard Gooch may be reached at  http://www.safe-mbox.com/~rgooch/
+.\"
+.\"	milter-regexp.8		Richard Gooch	20-SEP-2004
+.\"
+.TH MILTER-REGEXP 8 "20 Sep 2004" "GoochUtils"
+
+.SH NAME
+milter-regexp \- sendmail milter to control delivery of email messages
+based on regular expression matching
+
+.SH SYNOPSIS
+.B milter-regexp
+.B -d
+.B -f
+.B -p port
+.B [ -u usersdir ]
+
+.SH DESCRIPTION
+The \fImilter-regexp\fP programme is a sendmail milter (mail filter)
+which can be used to reject, redirect and/or stall messages which
+match user-specified regular expressions. This milter provides
+functionality similar to \fIprocmail(1)\fP, but allows filtering to
+take place during the SMTP transaction. It is ideally suited to
+gateway SMTP servers where centralised content filtering is required
+(e.g. for spam or viruses).
+
+The following delivery choices are available:
+
+.RS
+reject a message with a 44x (temporary) error
+
+reject a message with a 55x (permanent) error
+
+discard a message (silently)
+
+accept a message, but insert a tag (header line)
+
+redirect the message to a different destination
+
+accept the message with no changes (this is the default if no recipe
+matches)
+
+stall the connection for a specified time
+
+.RE
+The ability to reject a message with a temporary error and/or stall a
+message may be used to consume resources on the sending MTA. This will
+help to increase the costs to the spammer or the open relay being
+abused by the spammer.
+
+The milter will fork a background process which should never exit
+(unless there is some internal failure).
+
+.SH OPTIONS
+.TP
+.B \-d
+Enable debug mode. In this mode, the programme runs in the foreground,
+and extra debugging messages are sent to the standard error.
+.TP
+.B \-f
+The full envelope recipient is used when loading configuration files
+from the \fIusersdir\fP directory. By default, only the local part of
+the envelope recipient is used.
+.TP
+.B \-p port
+The \fIport\fP to listen on for connections from sendmail.
+.TP
+.B \-u usersdir
+If users are permitted to write their own configuration files, the
+parent directory for user home directories must be given by
+\fIusersdir\fP. If this option is not given, users are not permitted
+to write their own configuration files.
+
+.SH CONFIGURATION
+The configuration file \fB/etc/mail/milter-regexp.conf\fP contains the
+regular expression recipes to use when filtering email. This is a
+system-wide configuration file. In addition, each envelope recipient
+may have a personal configuration file. The system-wide file is
+processed first, thus it takes precedence: if it specifies that an
+action be taken, it will be taken.
+
+The per-recipient configuration files are
+.br
+\fBusersdir\fP/\fBuser\fP/.milter-regexp.conf
+.br
+(where \fBusersdir\fP is the parent directory for user home
+directories and \fBuser\fP is the local user component of the envelope
+recipient, or the full envelope recipient if the \fB\-f\fP option is
+given).
+
+If multiple envelope recipients are specified in the email, each of
+their respective per-recipient configuration files are processed. In
+the case of conflicts in delivery actions, the following resolution
+algorithm is used:
+
+.RS
+any recipient that specifies a delivery action (accept, tag or
+redirect) will have that delivery action taken, irrespective of the
+delivery actions for other recipients
+
+44x rejections mixed with 55x rejections will result in a 44x
+rejection
+
+different rejection messages may result in a random choice of
+rejection message being given
+
+rejections mixed with delivery actions will not result in rejections,
+and the recipients with reject actions will be removed from the
+recipient list
+
+discards mixed with rejections will result in rejections
+
+discard actions result in that recipient being removed from the
+recipient list
+
+multiple tag actions will result in multiple header tags being added,
+and will be visible to all recipients
+
+stalls mixed with delivery actions (accept, tag or redirect) will
+result in no stalls.
+
+.RE
+
+The system-wide and per-recipient configuration files have the same
+syntax. The modification timestamps are checked every time a new mail
+message is received, and each changed file is rescanned.
+
+It is a simple ASCII file. Comment lines must start with a leading '#'
+character. Comment lines and blank lines are ignored. The file is
+organised as a sequence of recipes. Each recipe must contain 0 or more
+\fIconditions\fP, 0 or more \fIactions\fP, an optional \fImessage\fP
+and an optional \fIredirect address\fP, in that order. \fIactions\fP
+are taken when \fIcondition\fPs are met. The syntax is:
+
+.RS
+.nf
+<where> [<logic>] <regexp>
+<where> [<logic>] <regexp>
+<where> [<logic>] <regexp>
+<list of actions>
+[MESSAGE <optional message>]
+[DESTINATION <optional address>]
+.fi
+.RE
+
+\fI<where>\fP is the part of the message to search, \fI<logic>\fP is
+an optional logical condition, \fI<regexp>\fP is the regular
+expression, \fI<list of actions>\fP is the list of actions to take,
+\fI<optional message>]\fP is an optional message for header tags and
+reject actions and \fI<optional address>\fP is an optional email
+address for redirections.
+
+The first recipe per configuration file that matches is the only one
+that will have its action(s) taken. In other words, processing of a
+configuration file stops at the first matching recipe in that file.
+
+The following are valid values for \fI<where>\fP:
+.RS
+.TP
+.B s
+search the envelope sender address for a regular expression match
+.TP
+.B r
+search all the envelope recipient addresses for a regular expression
+match
+.TP
+.B h
+search the message header for a regular expression match
+.TP
+.B b
+search the message body for a regular expression match
+.RE
+
+The default logical condition is to AND the condition with previous
+conditions in the recipe. The following values for \fI<logic>\fP are:
+.RS
+.TP
+.B &
+AND the condition with previous conditions
+.TP
+.B |
+OR the condition with previous conditions
+.TP
+.B !
+invert the result of the regular expression match. This is applied
+before the other logical operators
+.RE
+
+The following actions are defined:
+.TP
+.B PERMFAIL
+Fail the mail transaction with a 55x (permanent) error code. This is
+an exclusive action
+.TP
+.B TEMPFAIL
+Fail the mail transaction with a 44x (temporary) error code. This is
+an exclusive action
+.TP
+.B TAG
+Allow the mail to pass, but add a header line (tag). This is an
+exclusive action
+.TP
+.B DISCARD
+Accept and silently discard the message. This is an exclusive action
+.TP
+.B REDIRECT
+Redirect message to the address given by \fI<optional
+address>\fP. This is an exclusive action
+.TP
+.B ACCEPT
+Accept the message without changes. This is an exclusive action. This
+is the default behaviour
+.TP
+.B STALL
+Stall the mail connection for a while, consuming resources on the
+connecting MTA. This may be used in conjunction with the other
+actions in this recipe
+.RE
+
+.SH EXAMPLES
+milter-regexp -p local:/var/run/milter-regexp.sock
+
+The following is a sample configuration file:
+
+.nf
+h ^To: Friend@public.com
+h | ^X-Advertisement:
+PERMFAIL,STALL
+MESSAGE Get lost, spammer
+
+h ^Content-Type: multipart/mixed;
+b & ^[ 	]*filename=".*\\.exe"
+PERMFAIL,STALL
+MESSAGE Virus harbouring file formats not permitted here
+
+# Check for results from SpamAssassin
+h ^X-Spam-Status: (HIGH|MEDIUM)
+PERMFAIL,STALL
+MESSAGE Likely spam content detected: rejected
+.fi
+
+.SH FORMAT OF TAGS (HEADER LINES)
+When a recipe causes a header tag to be added, the format is:
+
+.nf
+\fBX-Milter-regexp:\fP <message>
+.fi
+
+where \fI<message>\fP is the message text provided in the
+configuration file.
+
+If a configuration or message error occurs, the following header line
+is added:
+
+.nf
+\fBX-Milter-regexp-error:\fP <text>
+.fi
+
+where \fI<text>\fP contains details on the error.
+
+.SH NOTE
+The sendmail configuration file will need to be updated so that this
+milter is used, and sendmail will need to be restarted.
+.SH AUTHOR
+Richard Gooch http://www.safe-mbox.com/~rgooch/
+
+.SH LICENCE
+This milter is licenced under the GNU GPL, which places no restriction
+on the use of software. Nevertheless, the author requests that this
+software not be used to censor email without the consent of
+recipients. It has been developed to help protect recipients from
+uninvited spam and viruses, not to block consensual communications.
+
+.SH AVAILABILITY
+The \fBmilter-regexp\fP programme is available from:
+ftp://ftp.atnf.csiro.au/pub/people/rgooch/utilities/
