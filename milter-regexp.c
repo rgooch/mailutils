@@ -2,7 +2,7 @@
 
     Main file for  milter-regexp  (Sendmail Milter to process regular exp.).
 
-    Copyright (C) 2004  Richard Gooch
+    Copyright (C) 2004-2015  Richard Gooch
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -72,8 +72,11 @@
   bug in <mlfi_eom>: bad user configuration file caused a pointer dereference
   of a character value.
 
-    Last updated by Richard Gooch   13-NOV-2004: Fixed bug in <mlfi_body>:
+    Updated by      Richard Gooch   13-NOV-2004: Fixed bug in <mlfi_body>:
   could overwrite message buffer by one byte.
+
+    Last updated by Richard Gooch   6-OCT-2015: Increased BUFLEN from 2048 to
+  16384 (received spam with a 5388 byte header line).
 
 
 */
@@ -109,7 +112,7 @@
 #define FALSE                    0
 #define TRUE                     1
 #define STRING_LENGTH          256
-#define BUFLEN                2048
+#define BUFLEN               16384
 #define CONFIG_FILE              "/etc/mail/milter-regexp.conf"
 #define DEFAULT_STALL_SECONDS    5
 #define FILTER_FLAGS             SMFIF_ADDHDRS | SMFIF_ADDRCPT | SMFIF_DELRCPT
@@ -1105,6 +1108,7 @@ int main (int argc, char *argv[])
     close (0);
     close (1);
     close (2);
+    syslog (LOG_INFO, "starting, pid=%d", getpid ());
     return smfi_main ();
 }   /*  End Function main  */
 
